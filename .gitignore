@@ -1,0 +1,6 @@
+*.csv
+*vcxproj*
+Debug
+Release
+x64
+
