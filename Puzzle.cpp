@@ -9,65 +9,69 @@
 #include <json/json.h>  // Assuming you have a JSON library, like jsoncpp
 #include "Puzzle.h"
 
-std::vector<unsigned short> getInverse(const std::vector<unsigned short>& permutation) {
-    std::vector<std::pair<unsigned short, unsigned short>> indexedPermutation;
-    for (unsigned short i = 0; i < permutation.size(); ++i) {
-        indexedPermutation.emplace_back(i, permutation[i]);
-    }
-    std::sort(indexedPermutation.begin(), indexedPermutation.end(), [](const auto& a, const auto& b) {
-        return a.second < b.second;
-    });
+template class Permutation<PUZZLE_SIZE>;
+template class Puzzle<PUZZLE_SIZE>;
 
-    std::vector<unsigned short> inverse;
-    for (const auto& pair : indexedPermutation) {
-        inverse.push_back(pair.first);
+template <std::size_t Size>
+mapping_t<Size> getInverse(const mapping_t<Size>& permutation) {
+    mapping_t<Size> inverse;
+    for (int i = 0; i < permutation.size(); ++i) {
+		inverse[permutation[i]] = i;
     }
-
     return inverse;
 }
 
-Permutation::Permutation(const std::vector<unsigned short>& mapping, const std::vector<unsigned char>& move_ids)
+template <std::size_t Size>
+Permutation<Size>::Permutation(const mapping_t<Size>& mapping, const move_ids_t& move_ids)
     : _mapping(mapping), _move_ids(move_ids) {}
 
-Permutation::Permutation(const std::vector<unsigned short>& mapping, const unsigned char move_id)
-    : _mapping(mapping), _move_ids(std::vector<unsigned char> {move_id}) {}
+template <std::size_t Size>
+Permutation<Size>::Permutation(const mapping_t<Size>& mapping, const unsigned char move_id)
+    : _mapping(mapping), _move_ids(move_ids_t {move_id}) {}
 
-Permutation::Permutation(int size) {
-    _mapping.reserve(size);
-    for (unsigned short i = 0; i < size; ++i) {
-        _mapping.push_back(i);
+template <std::size_t Size>
+Permutation<Size>::Permutation() {
+    _mapping = mapping_t<Size>();
+    // Initialize the mapping to the identity permutation.
+    for (size_t i = 0; i < Size; i++)
+    {
+        _mapping[i] = i;
     }
-    _move_ids = std::vector<unsigned char>();
+    _move_ids = move_ids_t();
 }
 
-Permutation::Permutation() {
-    _mapping = std::vector<unsigned short>();
-    _move_ids = std::vector<unsigned char>();
-}
-
-Permutation Permutation::from(int start, const std::vector<Permutation>& puzzle_info) {
-    Permutation p((int)puzzle_info[0].size());
+template <std::size_t Size>
+Permutation<Size> Permutation<Size>::from(int start, const std::vector<Permutation>& puzzle_info) {
+    Permutation p;
     for (int i = start; i < length(); ++i) {
 		p = p * puzzle_info[_move_ids[i]];
 	}
     return p;
 }
 
+//Permutation<Size>::~Permutation()
+//{
+//    // Deallocate the memory that was previously reserved for the string.
+//    delete[] *_mapping;
+//    delete[] _move_ids;
+//}
 
-Permutation Permutation::until(int end, const std::vector<Permutation>& puzzle_info) {
-    Permutation p((int)puzzle_info[0].size());
-    std::cout << "End: " << end << ", length " << length() << std::endl;
+template <std::size_t Size>
+Permutation<Size> Permutation<Size>::until(int end, const std::vector<Permutation<Size>>& puzzle_info) {
+    Permutation p;
     for (int i = 0; i < end; ++i) {
         p = p * puzzle_info[_move_ids[i]];
     }
     return p;
 }
 
-const std::vector<unsigned char>& Permutation::move_ids() const {
+template <std::size_t Size>
+const move_ids_t& Permutation<Size>::move_ids() const {
     return _move_ids;
 }
 
-std::vector<Permutation> Permutation::split(const std::vector<Permutation>& puzzle_info) const {
+template <std::size_t Size>
+std::vector<Permutation<Size>> Permutation<Size>::split(const std::vector<Permutation>& puzzle_info) const {
     std::vector<Permutation> result;
     for (const auto& move_id : _move_ids) {
         result.push_back(puzzle_info[move_id]);
@@ -75,31 +79,39 @@ std::vector<Permutation> Permutation::split(const std::vector<Permutation>& puzz
     return result;
 }
 
-const std::vector<unsigned short>& Permutation::mapping() const {
+template <std::size_t Size>
+const mapping_t<Size>& Permutation<Size>::mapping() const {
     return _mapping;
 }
 
-Permutation Permutation::operator*(const Permutation& other) const {
-    std::vector<unsigned short> result_mapping;
-    result_mapping.reserve(_mapping.size());
-    for (int i : other._mapping) {
-        result_mapping.push_back(_mapping[i]);
-    }
-    std::vector<unsigned char> result_move_ids = _move_ids;
+template <std::size_t Size>
+Permutation<Size> Permutation<Size>::operator*(const Permutation& other) const {
+    mapping_t<Size> result_mapping;
+    for (int i = 0; i < _mapping.size(); ++i) {
+		result_mapping[i] = _mapping[other._mapping[i]];
+	}
+    move_ids_t result_move_ids = _move_ids;
     result_move_ids.insert(result_move_ids.end(), other._move_ids.begin(), other._move_ids.end());
     return Permutation(result_mapping, result_move_ids);
 }
 
-
-int Permutation::size() const {
-    return (int)_mapping.size();
+template <std::size_t Size>
+Permutation<Size> Permutation<Size>::inverse() const {
+    move_ids_t inverse_move_ids(_move_ids.size(), -1);
+    for (int i = 0; i < _move_ids.size(); ++i)
+    {
+        if (_move_ids[i] % 2 == 0) {
+            inverse_move_ids[_move_ids.size() - 1 - i] = _move_ids[i] + 1;
+        }
+        else {
+            inverse_move_ids.push_back(_move_ids[i] - 1);
+        }
+    }
+    return Permutation(getInverse(_mapping), inverse_move_ids);
 }
 
-int Permutation::length() const {
-    return (int)_move_ids.size();
-}
-
-bool Permutation::operator<(const Permutation& other) const {
+template <std::size_t Size>
+bool Permutation<Size>::operator<(const Permutation& other) const {
     if (length() < other.length()) {
         return true;
     } else {
@@ -107,7 +119,8 @@ bool Permutation::operator<(const Permutation& other) const {
     }
 }
 
-bool Permutation::operator<=(const Permutation& other) const {
+template <std::size_t Size>
+bool Permutation<Size>::operator<=(const Permutation& other) const {
     if (length() <= other.length()) {
         return true;
     } else {
@@ -115,7 +128,8 @@ bool Permutation::operator<=(const Permutation& other) const {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, const Permutation& permutation) {
+template <std::size_t Size>
+std::ostream& operator<<(std::ostream& os, const Permutation<Size>& permutation) {
     os << (int)permutation._move_ids[0];
     for (int i = 1; i < permutation._move_ids.size(); ++i) {
         os << "." << (int)permutation._move_ids[i];
@@ -123,7 +137,8 @@ std::ostream& operator<<(std::ostream& os, const Permutation& permutation) {
     return os;
  }
 
-bool Permutation::operator==(const Permutation& other) const {
+template <std::size_t Size>
+bool Permutation<Size>::operator==(const Permutation& other) const {
     return _mapping == other._mapping;
 }
 
@@ -144,8 +159,14 @@ std::vector<std::string> splitSolution(const std::string& str)
 }
 
 
-Puzzle::Puzzle(int id, const std::string& puzzle_type, const std::string& solution, const std::string& initial, int num_wildcards)
+template <std::size_t Size>
+Puzzle<Size>::Puzzle(int id, const std::string& puzzle_type, const std::string& solution, const std::string& initial, int num_wildcards)
     : _id(id), _type(puzzle_type), _solution(splitSolution(solution)), _initial(splitSolution(initial)), _current(splitSolution(initial)), _num_wildcards(num_wildcards) {
+}
+
+template <std::size_t Size>
+Puzzle<Size>::Puzzle()
+    : _id(-1), _type(""), _solution(std::vector<std::string>()), _initial(std::vector<std::string>()), _current(std::vector<std::string>()), _num_wildcards(0) {
 }
 
 std::vector<std::string> split_string(const std::string& str, char delimiter)
@@ -165,7 +186,8 @@ std::vector<std::string> split_string(const std::string& str, char delimiter)
 	return result;
 }
 
-Puzzle::Puzzle(const std::string& input_line)
+template <std::size_t Size>
+Puzzle<Size>::Puzzle(const std::string& input_line)
 {
     std::vector<std::string> line = split_string(input_line, ',');
     _id = std::stoi(line[0]);
@@ -176,14 +198,19 @@ Puzzle::Puzzle(const std::string& input_line)
     _num_wildcards = std::stoi(line[4]);
 }
 
-void Puzzle::initializeMoveList(const std::unordered_map<std::string, std::vector<unsigned short>>& allowed_moves) {
+template <std::size_t Size>
+void Puzzle<Size>::initializeMoveList(const std::unordered_map<std::string, mapping_t<Size>>& allowed_moves) {
     for (const auto& entry : allowed_moves) {
         _allowed_moves[entry.first] = entry.second;
-        _allowed_moves["-" + entry.first] = getInverse(entry.second);
+        mapping_t<Size> inverse = getInverse(entry.second);
+        if (inverse != entry.second) {
+			_allowed_moves["-" + entry.first] = inverse;
+		}
     }
 }
 
-std::vector<std::string> Puzzle::allowedMoveIds() const {
+template <std::size_t Size>
+ std::vector<std::string> Puzzle<Size>::allowedMoveIds() const {
     std::vector<std::string> result;
     for (const auto& entry : _allowed_moves) {
         result.push_back(entry.first);
@@ -191,7 +218,8 @@ std::vector<std::string> Puzzle::allowedMoveIds() const {
     return result;
 }
 
-std::vector<std::string> Puzzle::randomSolution(size_t size) const {
+template <std::size_t Size>
+std::vector<std::string> Puzzle<Size>::randomSolution(size_t size) const {
     std::vector<std::string> result;
     std::vector<std::string> moveIds = allowedMoveIds();
     std::random_device rd;
@@ -205,27 +233,27 @@ std::vector<std::string> Puzzle::randomSolution(size_t size) const {
     return result;
 }
 
-Puzzle& Puzzle::permutate(const std::string& move_id) {
+template <std::size_t Size>
+ Puzzle<Size>& Puzzle<Size>::permutate(const std::string& move_id) {
     _permutations.push_back(move_id);
-    const std::vector<unsigned short>& permutation = _allowed_moves.at(move_id);
-    //std::cout << "Permutation: " << move_id << ", size: " << permutation.size() << std::endl;
+    const mapping_t<Size>& permutation = _allowed_moves.at(move_id);
     for (size_t i = 0; i < permutation.size(); ++i) {
-        //std::cout << i << " " << permutation[i] << std::endl;
-        //std::cout << i << " " << _current[i] << std::endl;
         _current[i] = _current[permutation[i]];
     }
     return *this;
 }
 
-Puzzle& Puzzle::fullPermutation(const std::vector<std::string>& permutation_list) {
+template <std::size_t Size>
+Puzzle<Size>& Puzzle<Size>::fullPermutation(const std::vector<std::string>& permutation_list) {
     for (const auto& move_id : permutation_list) {
         permutate(move_id);
     }
     return *this;
 }
 
-Puzzle Puzzle::clone() const {
-    Puzzle cloned_puzzle(_id, _type, "", "", _num_wildcards);
+template <std::size_t Size>
+Puzzle<Size> Puzzle<Size>::clone() const {
+    Puzzle<Size> cloned_puzzle(_id, _type, "", "", _num_wildcards);
     cloned_puzzle._solution = _solution;
     cloned_puzzle._current = _current;
     cloned_puzzle._initial = _initial;
@@ -233,11 +261,13 @@ Puzzle Puzzle::clone() const {
     return cloned_puzzle;
 }
 
-int Puzzle::score() const {
+template <std::size_t Size>
+int Puzzle<Size>::score() const {
     return 2 * (int)_current.size() * std::max(0, countMismatches() - _num_wildcards) + (int)_current.size();
 }
 
-int Puzzle::countMismatches() const {
+template <std::size_t Size>
+int Puzzle<Size>::countMismatches() const {
     int ctMistakes = 0;
     for (size_t i = 0; i < _solution.size(); i++)
     {
@@ -248,19 +278,23 @@ int Puzzle::countMismatches() const {
     return ctMistakes;
 }
 
-std::vector<std::string> Puzzle::permutations() const {
+template <std::size_t Size>
+std::vector<std::string> Puzzle<Size>::permutations() const {
     return _permutations;
 }
 
-const std::string& Puzzle::type() const {
+template <std::size_t Size>
+const std::string& Puzzle<Size>::type() const {
     return _type;
 }
 
-bool Puzzle::isSolved() const {
+template <std::size_t Size>
+bool Puzzle<Size>::isSolved() const {
     return countMismatches() <= getNumWildcards();
 }
 
-std::string Puzzle::submission() const {
+template <std::size_t Size>
+std::string Puzzle<Size>::submission() const {
     std::string result = std::to_string(_id) + ",";
     for (const auto& move_id : _permutations) {
         result += move_id + ".";
@@ -268,16 +302,17 @@ std::string Puzzle::submission() const {
     return result;
 }
 
-size_t Puzzle::size() const {
+template <std::size_t Size>
+size_t Puzzle<Size>::size() const {
     return _solution.size();
 }
 
-const std::string& Puzzle::operator[](size_t index) const {
+template <std::size_t Size>
+const std::string& Puzzle<Size>::operator[](size_t index) const {
     return _permutations[index];
 }
 
 // Vector osstreams
-
 std::string concatenate_vector(const std::vector<std::string>& vec) {
     std::string result;
     for (std::string value : vec) {
@@ -286,7 +321,8 @@ std::string concatenate_vector(const std::vector<std::string>& vec) {
     return result;
 }
 
-std::ostream& operator<<(std::ostream& os, const Puzzle& puzzle) {
+template <std::size_t Size>
+std::ostream& operator<<(std::ostream& os, const Puzzle<Size>& puzzle) {
     os << "----------\n"
         << puzzle._id << ": " << puzzle._type << " [" << puzzle._num_wildcards << "]\n"
         << concatenate_vector(puzzle._initial) << "\n"
