@@ -24,8 +24,7 @@ using namespace std;
 #include "windows.h"
 #include "psapi.h"
 
-#define INVERSE_PERMUTATION_SEARCH
-#define HEURISTIC_PERMUTATION_SEARCH
+#define RANDOM_PERMUTATION_SEARCH
 
 
 
@@ -301,6 +300,10 @@ Permutation<Size> simulated_annealing(
 	int max_retries,
 	int max_length
 ) {
+	random_device rd;  // Will be used to obtain a seed for the random number engine
+	mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+	uniform_real_distribution<> dis(0.0, 1.0);
+
 	string puzzle_type = puzzle.type();
 	cout << "Simmulated Annealing" << endl;
 	cout << "Cooling Factor: " << cooling_factor << endl;
@@ -316,17 +319,15 @@ Permutation<Size> simulated_annealing(
 
 	cout << "Initial Score: " << current_solution_score << endl;
 
-	random_device rd;  // Will be used to obtain a seed for the random number engine
-	mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
-	uniform_real_distribution<> dis(0.0, 1.0);
 
-	vector<int> components_order({ 0 });
-	vector<int> components_to_search({ 0 });
-	vector<int> restart_counts;
-	vector<int> worsening_steps;
+
+	vector<int> components_order({0});
+	vector<int> components_to_search({0});
+	vector<int> restart_counts({0});
+	vector<int> worsening_steps({0});
 
 	double T = initial_temp;
-
+	int iter_count = 0;
 	while (true) {
 		bool found_path = false;
 		int trial_ct = 0;
@@ -336,210 +337,144 @@ Permutation<Size> simulated_annealing(
 				relevant_permutations.push_back(p);
 			}
 		}
-		cout << "Number of relevant permutations: " << relevant_permutations.size() << endl;
+		//cout << "Number of relevant permutations: " << relevant_permutations.size() << endl;
 
-		while (!found_path && T >= min_temp) {
+#ifdef RANDOM_PERMUTATION_SEARCH
+		for (int k=0; k < 2*max_length; ++k) {
+			int p_length = rand() % max_length + 1;
+#pragma omp parallel for
+			for (long long permutation_idx1 = 0; permutation_idx1 < 10000; permutation_idx1++)
+			{
+				Permutation<Size> p;
+				int previous_move_id = -1;
+				for (int i = 0; i < p_length; ++i) {
+					int move_id = previous_move_id;
+					while (move_id == previous_move_id) {
+						move_id = rand() % relevant_permutations.size();
+					}
+					p = p * relevant_permutations[rand() % relevant_permutations.size()];
+					previous_move_id = move_id;
+				}
+#endif
+#ifdef ENUMERATIVE_PERMUTATION_SEARCH
 			for (int p_length = 1; p_length <= max_length; ++p_length) {
-				//int p_length = rand() % max_length + 1;
 				long long idx1 = pow(relevant_permutations.size(), p_length - 1) + 1;
 				long long idx2 = pow(relevant_permutations.size(), p_length);
-				//cout << "Permutation length: " << p_length << ", indices: " << idx1 << "-" << idx2 << " (" << idx2 - idx1 + 1 << ")" << endl;
-
-			/*for (long long permutation_idx1 = 0; permutation_idx1 < 10000; permutation_idx1++)
-			{*/
+			
 #pragma omp parallel for
 				for (long long permutation_idx = idx1; permutation_idx < idx2; permutation_idx++)
 				{
-					//long long  permutation_idx = rand() % (idx2-idx1) + idx1;
-					//
-
-					Permutation<Size> p;
-					/*
-					int previous_move_id = -1;
-					for (int i = 0; i < p_length; ++i) {
-						int move_id = previous_move_id;
-						while (move_id == previous_move_id) {
-							move_id = rand() % relevant_permutations.size();
-						}
-						p = p * relevant_permutations[rand() % relevant_permutations.size()];
-						previous_move_id = move_id;
-					}*/
-
 					vector<int> permutation_vector = get_base_n_vector(permutation_idx, relevant_permutations.size());
 					for (int j = permutation_vector.size(); j < p_length - 1; ++j) {
 						if (relevant_permutations[j].isInverse(relevant_permutations[j + 1]))
 							continue;
 					}
-
 					for (auto j : permutation_vector) {
 						p = p * relevant_permutations[j];
 					}
+#endif
 					if (p == Permutation<Size>()) continue;
-#ifdef HEURISTIC_PERMUTATION_SEARCH
 					int score = puzzle.countMismatches((new_solution * p), components_to_search);
-					//int score_commutative = puzzle.countMismatches((p * new_solution * p.inverse()), components_to_search);
 #pragma omp critical
 					{
+						// Once a solution improves the current best solution, we save it and start again
 						if (score < best_solution_score) {
-							//cout << "Puzzle " << puzzle.getId() << " Score (" << incumbent_solution_score << ")->(" << score << ") ";
 							incumbent_solution_score = score;
 							incumbent_solution = p;
-							// cout << "Length: " << incumbent_solution.length() << endl;
 							found_path = true;
 						}
 						else if (!found_path && (dis(gen) < exp((incumbent_solution_score - score - 1) / T))) {
 							incumbent_solution_score = score;
 							incumbent_solution = p;
 						}
-						//else if (!found_path && score_commutative < best_solution_score) {
-						//    cout << "Puzzle " << puzzle.getId() << " Score (" << incumbent_solution_score << ")->(c" << score_commutative << ") ";
-						//    incumbent_solution_score = score_commutative;
-						//    incumbent_solution = p * new_solution * p.inverse();
-						//    cout << "Length: " << incumbent_solution.length() << endl;
-						//    found_path = true;
-						//}
 					}
-#endif
-#ifdef EXACT_PERMUTATION_SEARCH
-					for (int i = 0; i < solution.size(); ++i) {
-						if (p.length() >= solution[i].length()) continue;
-						vector<string> initial_string = puzzles.at(i).getInitial();
-						vector<string> current_string(puzzles.at(i).size());
-						for (int j = 0; j < initial_string.size(); ++j) {
-							current_string[j] = initial_string[p.mapping()[j]];
-						}
-						if (current_string == puzzles.at(i).getSolution()) {
-#pragma omp critical
-							{
-								//cout << "Found solution for puzzle " << i << ": " << p << endl;
-								if (p.length() < solution[i].length()) {
-									solution[i] = p;
-									cout << "Puzzle " << i << " (" << solution[i].length() << ")->(" << p.length() << ")                 " << endl;
-								}
-							}
-						}
-					}
-#endif // EXACT_PERMUTATION_SEARCH
 					if (found_path) break;
 				}
 				if (found_path) break;
 				T *= cooling_factor;
-				cout << p_length << "/" << max_length << " " << T << "/" << min_temp << endl;
+				cout << p_length << "/" << max_length << " " << T << "/" << min_temp << "\r";
 			}
-		}
-#ifdef HEURISTIC_PERMUTATION_SEARCH
-		//cout << "=========Puzzle " << puzzle.getId() << "==================" << endl;
-		if (incumbent_solution_score <= puzzle.getNumWildcards()) {
-			if (components_to_search.size() < components_order.size()) {
-				cout << "Solved component " << components_to_search.back() << endl;
+			if (incumbent_solution_score <= puzzle.getNumWildcards()) {
+				if (components_to_search.size() < components_order.size()) {
+					cout << "Solved component " << components_to_search.back() << endl;
+					new_solution = new_solution * incumbent_solution;
+					best_solutions.push_back(new_solution);
+					components_to_search.push_back(components_order[components_to_search.size()]);
+					current_solution_score = puzzle.countMismatches(new_solution, components_to_search);
+					best_solution_score = current_solution_score;
+					incumbent_solution_score = current_solution_score;
+					cout << "Solving components: ";
+					for (auto c : components_to_search) {
+						cout << c << ", ";
+					}
+					cout << endl;
+					cout << "New Score: " << best_solution_score << endl;
+					T = initial_temp;
+				}
+				else {
+					new_solution = new_solution * incumbent_solution;
+					best_solutions.push_back(new_solution);
+					cout << "Solved all components" << endl;
+					for (auto m : new_solution.move_ids()) {
+						cout << (int)m << ", ";
+					}
+					return best_solutions.back();
+				}
+				continue;
+			}
+			if (incumbent_solution_score < best_solution_score) {
 				new_solution = new_solution * incumbent_solution;
 				best_solutions.push_back(new_solution);
-				components_to_search.push_back(components_order[components_to_search.size()]);
-				current_solution_score = puzzle.countMismatches(new_solution, components_to_search);
-				best_solution_score = current_solution_score;
-				incumbent_solution_score = current_solution_score;
-				cout << "Solving components: ";
-				for (auto c : components_to_search) {
-					cout << c << ", ";
-				}
-				cout << endl;
-				cout << "New Score: " << best_solution_score << endl;
-				T = initial_temp;
+				best_solution_score = incumbent_solution_score;
+				current_solution_score = incumbent_solution_score;
+				restart_counts.push_back(0);
+				worsening_steps.push_back(0);
 			}
 			else {
 				new_solution = new_solution * incumbent_solution;
-				best_solutions.push_back(new_solution);
-				cout << "Solved all components" << endl;
-				for (auto m : new_solution.move_ids()) {
-					cout << (int)m << ", ";
+				current_solution_score = incumbent_solution_score;
+				worsening_steps.back()++;
+			}
+
+			if (T < min_temp) {
+				/*for (auto r : restart_counts) {
+					cout << r << ", ";
 				}
-				return best_solutions.back();
+				cout << endl;
+				for (auto sol : best_solutions) {
+					cout << puzzle.countMismatches(sol) << "/" << sol.length() << ", ";
+				}
+				cout << endl;*/
+				while (best_solutions.size() > 0 && restart_counts.back() > max_retries) {
+					restart_counts.pop_back();
+					best_solutions.pop_back();
+					worsening_steps.pop_back();
+				}
+				new_solution = best_solutions.back();
+				current_solution_score = puzzle.countMismatches(new_solution, components_to_search);
+				best_solution_score = current_solution_score;
+				incumbent_solution_score = current_solution_score;
+				restart_counts.back()++;
+				T = initial_temp;
 			}
-			continue;
-		}
+			if (iter_count % 10 == 0)
+				cout << " Id      T Best_Score Best_Length Restart_ct Incumbent_Score Incumbent_Length Last_accepted_length Bad_Step_ct Components" << endl;
+			iter_count++;
 
-		// cout << "Incumbent Score: " << incumbent_solution_score;
-		if (incumbent_solution_score < best_solution_score) {
-			new_solution = new_solution * incumbent_solution;
-			best_solutions.push_back(new_solution);
-			best_solution_score = incumbent_solution_score;
-			current_solution_score = incumbent_solution_score;
-			restart_counts.push_back(0);
-			worsening_steps.push_back(0);
-			// cout << " (accepted improving solution)";
-		}
-		else {
-			new_solution = new_solution * incumbent_solution;
-			current_solution_score = incumbent_solution_score;
-			worsening_steps.back()++;
-			// cout << " (accepted worsening solution)";
-		}
-
-		if (T < min_temp) {
-			for (auto r : restart_counts) {
-				cout << r << ", ";
+			cout << setw(3) << puzzle.getId()
+				<< " " << setw(6) << setprecision(4) << T
+				<< " " << setw(10) << best_solution_score
+				<< " " << setw(11) << best_solutions.back().length()
+				<< " " << setw(10) << restart_counts.back()
+				<< " " << setw(15) << current_solution_score
+				<< " " << setw(16) << new_solution.length()
+				<< " " << setw(20) << incumbent_solution.length()
+				<< " " << setw(11) << worsening_steps.back()
+				<< " {";
+			for (auto c : components_to_search) {
+				cout << (int)c << ", ";
 			}
-			cout << endl;
-			for (auto sol : best_solutions) {
-				cout << puzzle.countMismatches(sol) << "/" << sol.length() << ", ";
-			}
-			while (restart_counts.back() > max_retries) {
-				restart_counts.pop_back();
-				best_solutions.pop_back();
-				worsening_steps.pop_back();
-			}
-			new_solution = best_solutions.back();
-			current_solution_score = puzzle.countMismatches(new_solution, components_to_search);
-			best_solution_score = current_solution_score;
-			incumbent_solution_score = current_solution_score;
-			T = initial_temp;
-			restart_counts.back()++;
-
-			//new_solution = Permutation<Size>();
-			//best_solution = Permutation<Size>();
-			//best_solution_score = 0;
-			//current_solution_score = 0;
-			//components_to_search = vector<int>({ 2 });
-			// cout << "*** Backtracking to solution of length " << best_solution.length() << ", and score " << best_solution_score << endl;
-		}
-		//for (auto c : incumbent_solution.move_ids()) {
-		//    cout << (int)c << ".";
-		//}
-		//cout << endl;
-		//cout << "T: " << T << endl;
-		//cout << "Best Score: " << best_solution_score << endl;
-		//cout << "Best Solution Length: " << best_solution.length()<< endl;
-		//cout << "Current Solution Score: " << current_solution_score << endl;
-		//cout << "Current Solution length: " << new_solution.length() << endl;
-
-		cout << " Id      T Best_Score Best_Length Restart_ct Incumbent_Score Incumbent_Length Last_accepted_length Bad_Step_ct Components" << endl;
-
-		cout << setw(3) << puzzle.getId()
-			<< " " << setw(6) << setprecision(4) << T
-			<< " " << setw(10) << best_solution_score
-			<< " " << setw(11) << best_solutions.back().length()
-			<< " " << setw(10) << restart_counts.back()
-			<< " " << setw(15) << current_solution_score
-			<< " " << setw(16) << new_solution.length()
-			<< " " << setw(20) << incumbent_solution.length()
-			<< " " << setw(11) << worsening_steps.back()
-			<< " {";
-		for (auto c : components_to_search) {
-			cout << (int)c << ", ";
-		}
-		cout << "}\r" << endl;
-
-		/*for (size_t j = 0; j < best_solution.move_ids().size(); ++j) {
-			cout << setw(2) << (int)new_solution.move_ids()[j] << ".";
-		}
-		cout << "(end of best solution)" << endl;
-		for (size_t j = best_solution.move_ids().size(); j < new_solution.move_ids().size(); ++j) {
-
-			cout << (int)new_solution.move_ids()[j] << ".";
-		}*/
-		//cout << endl << "===========================" << endl;
-
-#endif
+			cout << "}\r" << endl;
 	}
 }
 
@@ -800,6 +735,9 @@ void solve_sa(string& puzzle_filename, string& puzzle_info_filename, string& sol
 	vector<Permutation<Size>> allowed_moves = puzzle_info.first;
 	unordered_map<string, unsigned char> move_id_map = puzzle_info.second;
 	unordered_map<int, Permutation<Size>> solution = readSolution<Size>(solution_filename, puzzles, allowed_moves, move_id_map);
+	for (auto entry: solution) {
+		cout << entry.first << ": " << entry.second.length() << endl;
+	}
 	solution[puzzle_id] = simulated_annealing(puzzles.at(puzzle_id), solution.at(puzzle_id), allowed_moves, initial_temp, cooling_factor, min_temp, max_retries, max_length);
 	write_solution<Size>(puzzles, solution, move_id_map);
 	clock_t end = clock();
@@ -929,7 +867,6 @@ int main(int argc, char** argv) {
 		else if (puzzle_id < 150) {
 			puzzle_type = "cube_3/3/3";
 			solve_sa<54>(puzzle_filename, puzzle_info_filename, solution_filename, puzzle_type, puzzle_id, initial_temp, cooling_factor, min_temp, max_retries, max_length);
-
 		}
 		else if (puzzle_id < 210) {
 			puzzle_type = "cube_4/4/4";
@@ -938,17 +875,14 @@ int main(int argc, char** argv) {
 		else if (puzzle_id < 245) {
 			puzzle_type = "cube_5/5/5";
 			solve_sa<150>(puzzle_filename, puzzle_info_filename, solution_filename, puzzle_type, puzzle_id, initial_temp, cooling_factor, min_temp, max_retries, max_length);
-
 		}
 		else if (puzzle_id < 257) {
 			puzzle_type = "cube_6/6/6";
 			solve_sa<216>(puzzle_filename, puzzle_info_filename, solution_filename, puzzle_type, puzzle_id, initial_temp, cooling_factor, min_temp, max_retries, max_length);
-
 		}
 		else if (puzzle_id < 262) {
 			puzzle_type = "cube_7/7/7";
 			solve_sa<294>(puzzle_filename, puzzle_info_filename, solution_filename, puzzle_type, puzzle_id, initial_temp, cooling_factor, min_temp, max_retries, max_length);
-
 		}
 		else if (puzzle_id < 267) {
 			puzzle_type = "cube_8/8/8";
