@@ -149,8 +149,13 @@ public:
     const move_ids_t& move_ids() const;
     std::vector<Permutation> split(const  std::vector<Permutation>&) const;
     const mapping_t<Size>& mapping() const;
+
     Permutation operator*(const Permutation&) const;
+    mapping_t<Size> operator*(const mapping_t<Size>&) const;
+
     Permutation inverse() const;
+    mapping_t<Size> inverse_map() const;
+
 
     int size() const { return (int)_mapping.size(); };
     int length() const { return (int)_move_ids.size(); }
@@ -177,11 +182,19 @@ public:
     int score() const;
     int countMismatches() const;
     int countMismatches(int) const;
+
+    int countMismatches(const mapping_t<Size>&) const;
     int countMismatches(const Permutation<Size>&) const;
+
     int countMismatches(const Permutation<Size>&, int) const;
+    int countMismatches(const mapping_t<Size >&, int) const;
+
+    int countMismatches(const mapping_t<Size>&, std::vector<int>) const;
     int countMismatches(const Permutation<Size>&, std::vector<int>) const;
+
     bool admissablePermutation(const Permutation<Size>&, int) const;
     bool admissablePermutation(const Permutation<Size>&, std::vector<int>) const;
+
     move_ids_t permutations() const;
     const std::string& type() const;
     bool isSolved() const;
